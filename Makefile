@@ -1,5 +1,21 @@
-CXX = g++
-CXXFLAGS = -Wall -Wextra -Werror
+# Compiler selection
+COMPILER ?= gcc
+CXXFLAGS =
+
+
+ifeq ($(COMPILER),gcc)
+    CXX = g++
+else ifeq ($(COMPILER),clang)
+    CXX = clang++
+    CXXFLAGS += -std=c++17
+else ifeq ($(COMPILER),icx)
+    CXX = icpx
+    CXXFLAGS += -std=c++17
+else
+    $(error Unsupported compiler: $(COMPILER))
+endif
+
+CXXFLAGS += -Wall -Wextra -Werror
 INCLUDE = -I./src
 CXXCMD = $(CXX) $(CXXFLAGS) $(INCLUDE)
 
