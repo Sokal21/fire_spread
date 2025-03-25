@@ -1,7 +1,7 @@
 # Compiler selection
 COMPILER ?= gcc
 CXXFLAGS =
-
+MORE_CXXFLAGS =
 
 ifeq ($(COMPILER),gcc)
     CXX = g++
@@ -17,7 +17,7 @@ endif
 
 CXXFLAGS += -Wall -Wextra -Werror
 INCLUDE = -I./src
-CXXCMD = $(CXX) $(CXXFLAGS) $(INCLUDE)
+CXXCMD = $(CXX) ${MORE_CXXFLAGS} $(CXXFLAGS) $(INCLUDE)
 
 headers = $(wildcard ./src/*.hpp)
 sources = $(wildcard ./src/*.cpp)
