@@ -5,26 +5,35 @@ if [ $# -lt 3 ]; then
 fi
 
 ITERATIONS=$3
-# Clean first
-make clean
+OPTIMIZATION_FLAGS=("-O0" "-O1" "-O2" "-O3")
 
-# Time the compilation and execution
-make COMPILER=$1 MORE_CXXFLAGS="$2"
+for opt_flag in "${OPTIMIZATION_FLAGS[@]}"; do
+    
+    # Clean first
+    make clean
 
-for ((i=1; i<=$ITERATIONS; i++)); do
-    echo "Running iteration $i of $ITERATIONS"
-# Run AMDuProf analysis
-    AMDuProfCLI collect --event RETIRED_INST --event RETIRED_SSE_AVX_FLOPS --event CYCLES_NOT_IN_HALT \
-            --interval 1 -o amdprof_results \
-            ./graphics/burned_probabilities_data ./data/2015_50 > /dev/null 2>&1
+    # Time the compilation and execution
+    make COMPILER=$1 MORE_CXXFLAGS="$2 $opt_flag"
+    # Check if the compilation was successful
+
+    for maps in ./data/*.csv; do
+        echo "Running with map ${maps%%.*}"
+        for ((i=1; i<=$ITERATIONS; i++)); do
+            echo "Running iteration $i of $ITERATIONS"
+        # Run AMDuProf analysis
+            AMDuProfCLI collect --event RETIRED_INST --event RETIRED_SSE_AVX_FLOPS --event CYCLES_NOT_IN_HALT \
+                    --interval 1 -o amdprof_results \
+                    ./graphics/burned_probabilities_data ${FILE%%.*} 2>&1
+        done
+    done
+
+    # Create reports directory if it doesn't exist
+    mkdir -p reports
+
+    timestamp=$(date +%Y%m%d_%H%M%S)
+    # Create CSV header in reports folder
+    echo "Iteration,Duration,Cycles,Instructions,FP_Operations,IPC,IPS,FLOPS" > "reports/results_$1_$timestamp.csv"
 done
-
-# Create reports directory if it doesn't exist
-mkdir -p reports
-
-timestamp=$(date +%Y%m%d_%H%M%S)
-# Create CSV header in reports folder
-echo "Iteration,Duration,Cycles,Instructions,FP_Operations,IPC,IPS,FLOPS" > "reports/results_$1_$timestamp.csv"
 
 # Generate AMD uProf reports for all profile directories
 for profile_dir in amdprof_results/AMDuProf-burned_probabilities_data-Custom_*; do
