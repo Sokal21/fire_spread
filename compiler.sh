@@ -16,7 +16,7 @@ for ((i=1; i<=$ITERATIONS; i++)); do
 # Run AMDuProf analysis
     AMDuProfCLI collect --event RETIRED_INST --event RETIRED_SSE_AVX_FLOPS --event CYCLES_NOT_IN_HALT \
             --interval 1 -o amdprof_results \
-            ./graphics/burned_probabilities_data ./data/2015_50 > /dev/null 2>&1
+            ./graphics/burned_probabilities_data ./data/1999_27j_N > /dev/null 2>&1
 done
 
 # Create reports directory if it doesn't exist

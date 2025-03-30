@@ -1,0 +1,11 @@
+Iteration,Duration,Cycles,Instructions,FP_Operations,IPC,IPS,FLOPS
+amdprof_results/AMDuProf-burned_probabilities_data-Custom_Mar-30-2025_18-07-10,6.627,460694.0000,460833.0000,53819.0000,1.0003,69538.7052,8121.1709
+amdprof_results/AMDuProf-burned_probabilities_data-Custom_Mar-30-2025_18-07-17,6.727,466151.0000,468295.0000,53821.0000,1.0045,69614.2411,8000.7432
+amdprof_results/AMDuProf-burned_probabilities_data-Custom_Mar-30-2025_18-07-24,6.675,464478.0000,467176.0000,53827.0000,1.0058,69988.9138,8063.9700
+amdprof_results/AMDuProf-burned_probabilities_data-Custom_Mar-30-2025_18-07-30,6.728,465599.0000,469718.0000,53825.0000,1.0088,69815.3983,8000.1486
+amdprof_results/AMDuProf-burned_probabilities_data-Custom_Mar-30-2025_18-07-37,7.019,488500.0000,488874.0000,53825.0000,1.0007,69650.0926,7668.4712
+amdprof_results/AMDuProf-burned_probabilities_data-Custom_Mar-30-2025_18-07-45,7.573,522017.0000,522946.0000,53044.0000,1.0017,69054.0076,7004.3575
+amdprof_results/AMDuProf-burned_probabilities_data-Custom_Mar-30-2025_18-07-52,6.874,483255.0000,487615.0000,53825.0000,1.0090,70936.1361,7830.2298
+amdprof_results/AMDuProf-burned_probabilities_data-Custom_Mar-30-2025_18-07-59,6.825,477606.0000,477721.0000,53824.0000,1.0002,69995.7509,7886.3003
+amdprof_results/AMDuProf-burned_probabilities_data-Custom_Mar-30-2025_18-08-06,6.720,464806.0000,465273.0000,53803.0000,1.0010,69237.0535,8006.3988
+amdprof_results/AMDuProf-burned_probabilities_data-Custom_Mar-30-2025_18-08-13,7.570,500723.0000,508965.0000,53836.0000,1.0164,67234.4782,7111.7569

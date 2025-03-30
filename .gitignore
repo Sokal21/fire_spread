@@ -1,6 +1,4 @@
-reports/*
 *.o
-./chart.jpg
 
 graphics/burned_probabilities_data
 graphics/fire_animation_data
