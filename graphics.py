@@ -13,7 +13,7 @@ for i, file in enumerate(csv_files):
     data = pd.read_csv(file)
     
     # Assuming the CSV has a column named 'IPS' for performance
-    ips = data['IPS'].to_numpy()  # Convert to numpy array
+    ips = data['Duration'].to_numpy()  # Convert to numpy array
     
     # Generate bar plot
     x_positions = range(len(ips))
@@ -23,8 +23,8 @@ for i, file in enumerate(csv_files):
     
 # Add labels and title
 plt.xlabel('Index')
-plt.ylabel('IPS')
-plt.title('Performance based on IPS')
+plt.ylabel('Duration')
+plt.title('Performance based on Duration')
 plt.legend()
 
 # Set x-axis ticks to show integer indices
