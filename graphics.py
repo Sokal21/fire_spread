@@ -49,8 +49,9 @@ for idx, metric in enumerate(metrics):
     for label in labels:
         parts = label.split('/')[-1].split('_')
         compiler = parts[1]
+        timestamp = parts[-1].replace('.csv', '')  # Extract timestamp from filename
         opt_status = "Opt" if "optimizado" in label else "No-opt"
-        shortened_labels.append(f"{compiler}\n{opt_status}")
+        shortened_labels.append(f"{compiler}\n{opt_status}\n{timestamp}")
     
     # Set labels and title
     ax.set_xticks(range(len(values)))
