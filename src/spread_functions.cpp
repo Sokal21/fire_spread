@@ -69,6 +69,14 @@ Fire simulate_fire(
     burned_bin[{ cell_0, cell_1 }] = 1;
   }
 
+  // Directions for the 8 neighbors declared previous to the loop
+  constexpr int moves[8][2] = { { -1, -1 }, { -1, 0 }, { -1, 1 }, { 0, -1 },
+                                { 0, 1 },   { 1, -1 }, { 1, 0 },  { 1, 1 } };
+
+  // Angles for the 8 neighbors declared previous to the loop
+  constexpr double angles[8] = { M_PI * 3 / 4, M_PI, M_PI * 5 / 4, M_PI / 2, M_PI * 3 / 2,
+                                 M_PI / 4,     0,    M_PI * 7 / 4 };
+
   while (burning_size > 0) {
     size_t end_forward = end;
 
@@ -82,42 +90,23 @@ Fire simulate_fire(
 
       const Cell& burning_cell = landscape[{ burning_cell_0, burning_cell_1 }];
 
-      constexpr int moves[8][2] = { { -1, -1 }, { -1, 0 }, { -1, 1 }, { 0, -1 },
-                                    { 0, 1 },   { 1, -1 }, { 1, 0 },  { 1, 1 } };
-
-      int neighbors_coords[2][8];
-
-      for (size_t i = 0; i < 8; i++) {
-        neighbors_coords[0][i] = int(burning_cell_0) + moves[i][0];
-        neighbors_coords[1][i] = int(burning_cell_1) + moves[i][1];
-      }
-      // Note that in the case 0 - 1 we will have size_t_MAX
-
-      // Loop over neighbors_coords of the focal burning cell
-
+      // Loop over neighbors of the focal burning cell
       for (size_t n = 0; n < 8; n++) {
-
-        int neighbour_cell_0 = neighbors_coords[0][n];
-        int neighbour_cell_1 = neighbors_coords[1][n];
+        int neighbour_cell_0 = int(burning_cell_0) + moves[n][0];
+        int neighbour_cell_1 = int(burning_cell_1) + moves[n][1];
 
         // Is the cell in range?
-        bool out_of_range = 0 > neighbour_cell_0 || neighbour_cell_0 >= int(n_col) ||
-                            0 > neighbour_cell_1 || neighbour_cell_1 >= int(n_row);
-
-        if (out_of_range)
+        if (neighbour_cell_0 < 0 || neighbour_cell_0 >= int(n_row) || neighbour_cell_1 < 0 ||
+            neighbour_cell_1 >= int(n_col)) {
           continue;
+        }
 
         const Cell& neighbour_cell = landscape[{ neighbour_cell_0, neighbour_cell_1 }];
 
         // Is the cell burnable?
-        bool burnable_cell =
-            !burned_bin[{ neighbour_cell_0, neighbour_cell_1 }] && neighbour_cell.burnable;
-
-        if (!burnable_cell)
+        if (burned_bin[{ neighbour_cell_0, neighbour_cell_1 }] || !neighbour_cell.burnable) {
           continue;
-
-        constexpr double angles[8] = { M_PI * 3 / 4, M_PI, M_PI * 5 / 4, M_PI / 2, M_PI * 3 / 2,
-                                       M_PI / 4,     0,    M_PI * 7 / 4 };
+        }
 
         // simulate fire
         double prob = spread_probability(
@@ -126,10 +115,9 @@ Fire simulate_fire(
         );
 
         // Burn with probability prob (Bernoulli)
-        bool burn = (double)rand() / (double)RAND_MAX < prob;
-
-        if (burn == 0)
+        if ((double)rand() / (double)RAND_MAX >= prob) {
           continue;
+        }
 
         // If burned, store id of recently burned cell and set 1 in burned_bin
         end_forward += 1;
