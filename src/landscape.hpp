@@ -14,13 +14,14 @@ enum VegetationType {
 static_assert( sizeof(VegetationType) == 1 );
 
 struct Cell {
-  double elevation;
-  double wind_direction;
+  float elevation;
+  float wind_direction;
+  float fwi;
+  float aspect;
   bool burnable;
   VegetationType vegetation_type;
-  double fwi;
-  double aspect;
-};
+  char padding[2]; // Add padding to align to 16 bytes
+} __attribute__((aligned(16))); // Force 16-byte alignment for vectorization
 
 struct Landscape {
   size_t width;
