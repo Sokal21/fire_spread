@@ -5,6 +5,7 @@ MORE_CXXFLAGS =
 
 ifeq ($(COMPILER),gcc)
     CXX = g++
+    CXXFLAGS += -std=c++17
 else ifeq ($(COMPILER),clang)
     CXX = clang++
     CXXFLAGS += -std=c++17
@@ -15,7 +16,7 @@ else
     $(error Unsupported compiler: $(COMPILER))
 endif
 
-CXXFLAGS += -Wall -Wextra -Werror -march=native -fopt-info-vec-optimized
+CXXFLAGS += -Wall -Wextra -Werror -march=native -ffast-math -O3 -fopt-info-vec-optimized
 INCLUDE = -I./src
 CXXCMD = $(CXX) ${MORE_CXXFLAGS} $(CXXFLAGS) $(INCLUDE)
 
