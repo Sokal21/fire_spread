@@ -55,12 +55,6 @@ float spread_probability_scalar(
 #ifndef _mm256_exp_ps
 #define _mm256_exp_ps(a) _mm256_set_ps(expf(((float*)&a)[7]), expf(((float*)&a)[6]), expf(((float*)&a)[5]), expf(((float*)&a)[4]), expf(((float*)&a)[3]), expf(((float*)&a)[2]), expf(((float*)&a)[1]), expf(((float*)&a)[0]))
 #endif
-#ifndef _mm256_atan_ps // Placeholder
-#define _mm256_atan_ps(a) _mm256_set_ps(atanf(((float*)&a)[7]), atanf(((float*)&a)[6]), atanf(((float*)&a)[5]), atanf(((float*)&a)[4]), atanf(((float*)&a)[3]), atanf(((float*)&a)[2]), atanf(((float*)&a)[1]), atanf(((float*)&a)[0]))
-#endif
-#ifndef _mm256_sin_ps // Placeholder
-#define _mm256_sin_ps(a) _mm256_set_ps(sinf(((float*)&a)[7]), sinf(((float*)&a)[6]), sinf(((float*)&a)[5]), sinf(((float*)&a)[4]), sinf(((float*)&a)[3]), sinf(((float*)&a)[2]), sinf(((float*)&a)[1]), sinf(((float*)&a)[0]))
-#endif
  #ifndef _mm256_cos_ps // Placeholder
 #define _mm256_cos_ps(a) _mm256_set_ps(cosf(((float*)&a)[7]), cosf(((float*)&a)[6]), cosf(((float*)&a)[5]), cosf(((float*)&a)[4]), cosf(((float*)&a)[3]), cosf(((float*)&a)[2]), cosf(((float*)&a)[1]), cosf(((float*)&a)[0]))
 #endif
@@ -222,10 +216,16 @@ Fire simulate_fire(
       __m256 v_neigh_elev = _mm256_load_ps(neigh_elev.data());
       __m256 v_neigh_fwi = _mm256_load_ps(neigh_fwi.data());
       __m256 v_neigh_aspect = _mm256_load_ps(neigh_aspect.data());
-      // Load uint8_t arrays - need conversion or careful handling
-      // For masks, load as epi32 and use compare/blend
-      __m256i v_neigh_burnable = _mm256_loadu_si256((__m256i*)neigh_burnable.data()); // Treat as 8x int32, only lowest byte matters
-      __m256i v_neigh_already_burned = _mm256_loadu_si256((__m256i*)neigh_already_burned.data());
+      
+      // Load uint8_t arrays and extend to int32_t for comparisons
+      // Load 8 bytes (64 bits) into the lower part of a 128-bit register
+      // Note: _mm_loadu_si64 requires a void const* argument.
+      __m128i v_neigh_burnable_8bit = _mm_loadu_si64(neigh_burnable.data());
+      __m128i v_neigh_already_burned_8bit = _mm_loadu_si64(neigh_already_burned.data());
+
+      // Zero-extend uint8_t values in the 128-bit register to int32_t values in a 256-bit register
+      __m256i v_neigh_burnable = _mm256_cvtepu8_epi32(v_neigh_burnable_8bit);
+      __m256i v_neigh_already_burned = _mm256_cvtepu8_epi32(v_neigh_already_burned_8bit);
 
       // Create float mask for burnable (0.0f or 1.0f) -> use integer compare results
       __m256i v_is_burnable_mask = _mm256_cmpeq_epi32(v_neigh_burnable, _mm256_set1_epi32(1)); // Check if burnable == 1
@@ -265,8 +265,12 @@ Fire simulate_fire(
 
       // Vegetation term (using blend based on type)
       // This requires loading neigh_veg_type and comparing
+      // Load 8 bytes (64 bits) into the lower part of a 128-bit register
+      __m128i v_neigh_veg_type_8bit = _mm_loadu_si64(neigh_veg_type.data());
+      // Zero-extend uint8_t values in the 128-bit register to int32_t values in a 256-bit register
+      __m256i v_veg_type = _mm256_cvtepu8_epi32(v_neigh_veg_type_8bit);
+
       // Example for SUBALPINE (type 1)
-      __m256i v_veg_type = _mm256_loadu_si256((__m256i*)neigh_veg_type.data()); // Load as epi32
       __m256i v_is_suba_mask_i = _mm256_cmpeq_epi32(v_veg_type, _mm256_set1_epi32(SUBALPINE));
       __m256 v_is_suba_mask = _mm256_castsi256_ps(v_is_suba_mask_i);
       v_linpred = _mm256_add_ps(v_linpred, _mm256_and_ps(v_is_suba_mask, v_param_suba)); // Add if subalpine

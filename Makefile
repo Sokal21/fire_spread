@@ -16,7 +16,7 @@ else
     $(error Unsupported compiler: $(COMPILER))
 endif
 
-CXXFLAGS += -Wall -Wextra -Werror -march=native -ffast-math -O3 -fopt-info-vec-optimized
+CXXFLAGS += -Wall -Wextra -Werror -march=native -ffast-math -mavx2 -O3 -ftree-vectorize -fopt-info-vec-optimized
 INCLUDE = -I./src
 CXXCMD = $(CXX) ${MORE_CXXFLAGS} $(CXXFLAGS) $(INCLUDE)
 
