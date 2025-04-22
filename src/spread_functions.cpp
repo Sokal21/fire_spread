@@ -13,6 +13,10 @@
 #include "fires.hpp"
 #include "landscape.hpp"
 
+// SLEEF configuration
+#define SLEEF_VECTOR_SIZE 8
+#include <sleef.h>
+
 // Scalar version (can be kept for reference or fallback)
 float spread_probability_scalar(
     const Cell& burning, const Cell& neighbour, SimulationParams params, float angle,
@@ -254,7 +258,7 @@ Fire simulate_fire(
 
       // Wind term = cos(angle - burn_wind_dir)
       __m256 v_wind_arg = _mm256_sub_ps(v_angles, v_burn_wind_dir);
-      __m256 v_wind_term = _mm256_cos_ps(v_wind_arg); // Needs vectorized math
+      __m256 v_wind_term = Sleef_cosf8_u35(v_wind_arg); // Use SLEEF's vectorized cosine
 
       // Elevation term = (neigh_elev - elev_mean) * inv_elev_sd
       __m256 v_elev_term = _mm256_sub_ps(v_neigh_elev, v_elev_mean);
@@ -293,7 +297,7 @@ Fire simulate_fire(
 
       // Probability: prob = upper / (1 + exp(-linpred))
       __m256 v_neg_linpred = _mm256_sub_ps(v_zero, v_linpred); // Negate linpred
-      __m256 v_exp_term = _mm256_exp_ps(v_neg_linpred); // Needs vectorized math
+      __m256 v_exp_term = Sleef_exp2f8_u35(v_neg_linpred); // Use SLEEF's vectorized exp
       __m256 v_denom = _mm256_add_ps(v_one, v_exp_term);
       __m256 v_prob = _mm256_div_ps(v_upper_limit, v_denom);
 
