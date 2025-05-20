@@ -16,11 +16,11 @@ else
     $(error Unsupported compiler: $(COMPILER))
 endif
 
-# SLEEF configuration
-SLEEF_CFLAGS = -DENABLE_AVX2 -DENABLE_AVX -DENABLE_SSE2 -DENABLE_SSE4 -DENABLE_FMA4 -DENABLE_FMA
-SLEEF_LDFLAGS = -lsleef
+# # SLEEF configuration
+# SLEEF_CFLAGS = -DENABLE_AVX2 -DENABLE_AVX -DENABLE_SSE2 -DENABLE_SSE4 -DENABLE_FMA4 -DENABLE_FMA
+# SLEEF_LDFLAGS = -lsleef
 
-CXXFLAGS += -Wall -Wextra -Werror -march=native -ffast-math -mavx2 -O3 -ftree-vectorize -fopt-info-vec-optimized $(SLEEF_CFLAGS)
+CXXFLAGS += -Wall -Wextra -Werror -march=native -ffast-math -mavx2 -O3 -ftree-vectorize -fopt-info-vec-optimized $(SLEEF_CFLAGS) -fopenmp # Add -fopenmp
 INCLUDE = -I./src
 CXXCMD = $(CXX) ${MORE_CXXFLAGS} $(CXXFLAGS) $(INCLUDE)
 
@@ -37,7 +37,7 @@ all: $(mains)
 	$(CXXCMD) -c $< -o $@
 
 $(mains): %: %.cpp $(objects) $(headers)
-	$(CXXCMD) $< $(objects) -o $@ $(SLEEF_LDFLAGS)
+	$(CXXCMD) $< $(objects) -o $@ $(SLEEF_LDFLAGS) -fopenmp # Add -fopenmp for linking
 
 data.zip:
 	wget https://cs.famaf.unc.edu.ar/~nicolasw/data.zip
