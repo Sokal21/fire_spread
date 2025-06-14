@@ -22,3 +22,9 @@ Fire simulate_fire(
     SimulationParams params, float distance, float elevation_mean, float elevation_sd,
     float upper_limit
 );
+
+Fire simulate_fire_cuda(
+  const Landscape& host_landscape, const std::vector<std::pair<size_t, size_t>>& host_ignition_cells,
+  SimulationParams host_params, float distance, float elevation_mean, float elevation_sd,
+  float upper_limit
+);

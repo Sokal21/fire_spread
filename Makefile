@@ -1,51 +1,67 @@
-# Compiler selection
-COMPILER ?= gcc
-CXXFLAGS =
-MORE_CXXFLAGS =
+# ... (existing compiler selection) ...
 
-ifeq ($(COMPILER),gcc)
-    CXX = g++
-    CXXFLAGS += -std=c++17
-else ifeq ($(COMPILER),clang)
-    CXX = clang++
-    CXXFLAGS += -std=c++17
-else ifeq ($(COMPILER),icx)
-    CXX = icpx
-    CXXFLAGS += -std=c++17
-else
-    $(error Unsupported compiler: $(COMPILER))
-endif
+# CUDA Configuration (adjust paths if necessary)
+CUDA_PATH ?= /usr/local/cuda
+NVCC := $(CUDA_PATH)/bin/nvcc
+CUDA_LIB_PATH := -L$(CUDA_PATH)/lib64
+CUDA_LIBS := -lcudart -lcurand # Add other CUDA libs as needed (e.g., cufft, cublas)
 
-# # SLEEF configuration
-# SLEEF_CFLAGS = -DENABLE_AVX2 -DENABLE_AVX -DENABLE_SSE2 -DENABLE_SSE4 -DENABLE_FMA4 -DENABLE_FMA
-# SLEEF_LDFLAGS = -lsleef
+# --- SLEEF Configuration (if still used for CPU parts or if you have a CUDA version) ---
+# ... (your SLEEF config) ...
 
-CXXFLAGS += -Wall -Wextra -Werror -march=native -ffast-math -mavx2 -O3 -ftree-vectorize -fopt-info-vec-optimized $(SLEEF_CFLAGS) -fopenmp # Add -fopenmp
-INCLUDE = -I./src
-CXXCMD = $(CXX) ${MORE_CXXFLAGS} $(CXXFLAGS) $(INCLUDE)
+# General Compiler Flags
+# For host code compiled by CXX
+CXXFLAGS += -Wall -Wextra -Werror -march=native -O3 -fopenmp $(SLEEF_COMPILE_FLAGS)
+# For device code compiled by NVCC (can also be set in NVCCFLAGS)
+NVCCFLAGS := -O3 -std=c++17 --gpu-architecture=sm_XX # Replace sm_XX with your GPU's compute capability (e.g., sm_75)
+NVCCFLAGS += -Xcompiler "$(CXXFLAGS)" # Pass CXXFLAGS to the host compiler part of nvcc
+NVCCFLAGS += $(SLEEF_INCLUDE_PATH) # If SLEEF headers are needed by .cu files
+NVCCFLAGS += -I./src # Project includes for .cu files
 
-headers = $(wildcard ./src/*.hpp)
-sources = $(wildcard ./src/*.cpp)
-objects_names = $(sources:./src/%.cpp=%)
-objects = $(objects_names:%=./src/%.o)
+PROJECT_INCLUDE = -I./src
+# Full command for C++ compilation
+CXXCMD = $(CXX) $(MORE_CXXFLAGS) $(CXXFLAGS) $(PROJECT_INCLUDE) $(SLEEF_INCLUDE_PATH)
+# Full command for CUDA compilation
+NVCCCMD = $(NVCC) $(NVCCFLAGS) $(PROJECT_INCLUDE) $(SLEEF_INCLUDE_PATH)
 
+
+# Source files
+# Separate .cpp and .cu sources
+CPP_SOURCES = $(wildcard ./src/*.cpp) $(wildcard graphics/*.cpp) # Add graphics sources
+CU_SOURCES = $(wildcard ./src/*.cu) # Assuming you'll have .cu files in src
+
+# Object files
+CPP_OBJECTS = $(CPP_SOURCES:.cpp=.o)
+CU_OBJECTS = $(CU_SOURCES:.cu=.o) # nvcc will produce .o from .cu
+
+# All objects
+OBJECTS = $(CPP_OBJECTS) $(CU_OBJECTS)
+
+# ... (headers, mains) ...
 mains = graphics/burned_probabilities_data graphics/fire_animation_data
 
 all: $(mains)
 
+# Rule to compile .cpp files
 %.o: %.cpp $(headers)
-	$(CXXCMD) -c $< -o $@
+    $(CXXCMD) -c $< -o $@
 
-$(mains): %: %.cpp $(objects) $(headers)
-	$(CXXCMD) $< $(objects) -o $@ $(SLEEF_LDFLAGS) -fopenmp # Add -fopenmp for linking
+# Rule to compile .cu files
+%.o: %.cu $(headers) # Add relevant .cuh CUDA headers if any
+    $(NVCCCMD) -c $< -o $@
 
-data.zip:
-	wget https://cs.famaf.unc.edu.ar/~nicolasw/data.zip
+# Rule to link executables
+# Ensure all objects (CPP_OBJECTS and CU_OBJECTS) are linked
+# and CUDA libraries are included.
+$(mains): %: %.cpp $(filter-out graphics/%.o, $(CPP_OBJECTS)) $(CU_OBJECTS) $(headers)
+    $(CXX) $(MORE_CXXFLAGS) $(CXXFLAGS) $(PROJECT_INCLUDE) $(SLEEF_INCLUDE_PATH) \
+        $< $(filter-out graphics/%.o, $(CPP_OBJECTS)) $(CU_OBJECTS) \
+        -o $@ $(SLEEF_LINK_FLAGS) -lm -fopenmp $(CUDA_LIB_PATH) $(CUDA_LIBS)
 
-data: data.zip
-	unzip data.zip
-
+# ... (data, clean targets) ...
+# Update clean target for .cu objects if needed
 clean:
-	rm -f $(objects) $(mains)
-
-.PHONY: all clean
+    rm -f $(OBJECTS) $(mains) graphics/*.png graphics/*.mp4 data.zip
+    rm -rf data
+    rm -f simulation_output.tmp.*
+    rm -rf temp_frames.*
