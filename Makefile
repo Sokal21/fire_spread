@@ -1,8 +1,8 @@
 # ... (existing compiler selection) ...
 
 # CUDA Configuration (adjust paths if necessary)
-CUDA_PATH ?= /usr/local/cuda
-NVCC := $(CUDA_PATH)/bin/nvcc
+CUDA_PATH ?= /usr/lib/cuda
+NVCC := nvcc
 CUDA_LIB_PATH := -L$(CUDA_PATH)/lib64
 CUDA_LIBS := -lcudart -lcurand # Add other CUDA libs as needed (e.g., cufft, cublas)
 
@@ -13,7 +13,7 @@ CUDA_LIBS := -lcudart -lcurand # Add other CUDA libs as needed (e.g., cufft, cub
 # For host code compiled by CXX
 CXXFLAGS += -Wall -Wextra -Werror -march=native -O3 -fopenmp $(SLEEF_COMPILE_FLAGS)
 # For device code compiled by NVCC (can also be set in NVCCFLAGS)
-NVCCFLAGS := -O3 -std=c++17 --gpu-architecture=sm_XX # Replace sm_XX with your GPU's compute capability (e.g., sm_75)
+NVCCFLAGS := -O3 -std=c++17 --gpu-architecture=sm_70 # Replace sm_XX with your GPU's compute capability (e.g., sm_75)
 NVCCFLAGS += -Xcompiler "$(CXXFLAGS)" # Pass CXXFLAGS to the host compiler part of nvcc
 NVCCFLAGS += $(SLEEF_INCLUDE_PATH) # If SLEEF headers are needed by .cu files
 NVCCFLAGS += -I./src # Project includes for .cu files
