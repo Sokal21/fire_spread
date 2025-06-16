@@ -78,10 +78,15 @@ __global__ void fire_spread_step_kernel(
 
 // --- Host-side simulate_fire function ---
 Fire simulate_fire_cuda(
-    const Landscape& host_landscape, const std::vector<Coord>& host_ignition_cells,
+    const Landscape& host_landscape, const std::vector<std::pair<size_t, size_t>>& host_ignition_cells,
     SimulationParams host_params, float distance, float elevation_mean, float elevation_sd,
     float upper_limit
 ) {
+    std::vector<Coord> ignition_cells;
+    ignition_cells.reserve(host_ignition_cells.size());
+    for (const auto& p : host_ignition_cells) {
+        ignition_cells.push_back({p.first, p.second});
+    }
     // Allocate GPU Memory
     Cell* d_landscape_cells;
     cudaMalloc(&d_landscape_cells, host_landscape.cells.elems.size() * sizeof(Cell));
@@ -96,12 +101,12 @@ Fire simulate_fire_cuda(
     curandState* d_rand_states;
     // TODO: allocate and init d_rand_states as needed
 
-    std::vector<Coord> host_all_burned_ids = host_ignition_cells;
+    std::vector<Coord> host_all_burned_ids = ignition_cells;
     Matrix<bool> host_burned_bin(host_landscape.width, host_landscape.height);
-    for (const auto& p : host_ignition_cells) host_burned_bin[{p.x, p.y}] = true;
+    for (const auto& p : ignition_cells) host_burned_bin[{p.x, p.y}] = true;
 
-    size_t current_burning_count_host = host_ignition_cells.size();
-    std::vector<Coord> host_current_burning_ids = host_ignition_cells;
+    size_t current_burning_count_host = ignition_cells.size();
+    std::vector<Coord> host_current_burning_ids = ignition_cells;
 
     Fire result_fire(host_landscape.width, host_landscape.height);
     result_fire.burned_ids_steps.push_back(host_all_burned_ids.size());
