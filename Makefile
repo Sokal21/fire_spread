@@ -28,7 +28,7 @@ NVCCCMD = $(NVCC) $(NVCCFLAGS) $(PROJECT_INCLUDE) $(SLEEF_INCLUDE_PATH)
 # Source files
 # Separate .cpp and .cu sources
 CPP_SOURCES = $(filter-out ./src/spread_functions.cpp, $(wildcard ./src/*.cpp) $(wildcard graphics/*.cpp))
-CU_SOURCES = $(wildcard ./src/*.cu)
+CU_SOURCES = ./src/spread_functions.cu
 
 # Object files
 CPP_OBJECTS = $(CPP_SOURCES:.cpp=.o)
