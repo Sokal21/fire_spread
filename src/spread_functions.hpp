@@ -1,4 +1,11 @@
 #pragma once
+#include <cstddef>
+#include <utility> // for std::pair
+#ifdef __CUDACC__
+  #define HOST_DEVICE __host__ __device__
+#else
+  #define HOST_DEVICE
+#endif
 
 #include <vector>
 
@@ -29,16 +36,22 @@ Fire simulate_fire_cuda(
   float upper_limit
 );
 
+
 struct Coord {
   size_t x;
   size_t y;
 
-  __host__ __device__ bool operator==(const Coord& other) const {
+  HOST_DEVICE bool operator==(const Coord& other) const {
     return x == other.x && y == other.y;
   }
 
-  // Para permitir uso como índice en Matrix, si lo necesitás
-  __host__ __device__ operator std::pair<size_t, size_t>() const {
+  // Conversión implícita a std::pair, útil para Matrix<bool>[Coord]
+  HOST_DEVICE operator std::pair<size_t, size_t>() const {
     return { x, y };
+  }
+
+  // Orden para std::sort si querés usarla en host
+  bool operator<(const Coord& other) const {
+    return (y < other.y) || (y == other.y && x < other.x);
   }
 };
