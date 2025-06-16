@@ -46,7 +46,7 @@ all: $(mains)
 
 # Link executables
 $(mains): %: %.cpp $(objects) $(headers)
-	$(CXX) $(CXXFLAGS) $(COMMON_FLAGS) $(INCLUDE) $< $(objects) -o $@ -fopenmp
+	$(NVCC) $(NVCCFLAGS) $(INCLUDE) $< $(objects) -o $@ -Xcompiler="-fopenmp -march=native"
 
 # Data file
 data.zip:
