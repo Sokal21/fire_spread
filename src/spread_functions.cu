@@ -108,6 +108,10 @@ Fire simulate_fire_cuda(
     cudaMalloc(&d_landscape_cells, host_landscape.cells.elems.size() * sizeof(Cell));
     // ... d_burned_bin, d_current_burning_ids, d_next_step_candidates, d_candidate_count, d_rand_states
 
+    bool* d_burned_bin;
+    size_t bin_size = host_landscape.width * host_landscape.height * sizeof(bool);
+    cudaMalloc(&d_burned_bin, bin_size);
+    cudaMemset(d_burned_bin, 0, bin_size);
     // 2. Copy Data Host to Device
     cudaMemcpy(d_landscape_cells, host_landscape.cells.elems.data(), host_landscape.cells.elems.size() * sizeof(Cell), cudaMemcpyHostToDevice);
     // ... copy initial burned_bin, initial ignition_cells to d_current_burning_ids, params
