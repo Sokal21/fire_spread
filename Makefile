@@ -48,7 +48,7 @@ all: $(mains)
 
 # Rule to compile .cu files
 %.o: %.cu $(headers)
-	$(NVCCCMD) -c $< -o $@
+	$(NVCC) $(NVCCFLAGS) -c $< -o $@
 
 # Rule to link executables
 $(mains): %: %.cpp $(filter-out graphics/%.o, $(CPP_OBJECTS)) $(CU_OBJECTS) $(headers)
