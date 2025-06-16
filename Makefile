@@ -44,24 +44,24 @@ all: $(mains)
 
 # Rule to compile .cpp files
 %.o: %.cpp $(headers)
-    $(CXXCMD) -c $< -o $@
+	$(CXXCMD) -c $< -o $@
 
 # Rule to compile .cu files
 %.o: %.cu $(headers) # Add relevant .cuh CUDA headers if any
-    $(NVCCCMD) -c $< -o $@
+	$(NVCCCMD) -c $< -o $@
 
 # Rule to link executables
 # Ensure all objects (CPP_OBJECTS and CU_OBJECTS) are linked
 # and CUDA libraries are included.
 $(mains): %: %.cpp $(filter-out graphics/%.o, $(CPP_OBJECTS)) $(CU_OBJECTS) $(headers)
-    $(CXX) $(MORE_CXXFLAGS) $(CXXFLAGS) $(PROJECT_INCLUDE) $(SLEEF_INCLUDE_PATH) \
-        $< $(filter-out graphics/%.o, $(CPP_OBJECTS)) $(CU_OBJECTS) \
-        -o $@ $(SLEEF_LINK_FLAGS) -lm -fopenmp $(CUDA_LIB_PATH) $(CUDA_LIBS)
+	$(CXX) $(MORE_CXXFLAGS) $(CXXFLAGS) $(PROJECT_INCLUDE) $(SLEEF_INCLUDE_PATH) \
+		$< $(filter-out graphics/%.o, $(CPP_OBJECTS)) $(CU_OBJECTS) \
+		-o $@ $(SLEEF_LINK_FLAGS) -lm -fopenmp $(CUDA_LIB_PATH) $(CUDA_LIBS)
 
 # ... (data, clean targets) ...
 # Update clean target for .cu objects if needed
 clean:
-    rm -f $(OBJECTS) $(mains) graphics/*.png graphics/*.mp4 data.zip
-    rm -rf data
-    rm -f simulation_output.tmp.*
-    rm -rf temp_frames.*
+	rm -f $(OBJECTS) $(mains) graphics/*.png graphics/*.mp4 data.zip
+	rm -rf data
+	rm -f simulation_output.tmp.*
+	rm -rf temp_frames.*
