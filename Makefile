@@ -23,7 +23,7 @@ COMMON_FLAGS = -Wall -Wextra -Werror -march=native -ffast-math -mavx2 -O3 -ftree
 INCLUDE = -I./src
 
 # Source and object files
-cpp_sources := $(filter-out ./src/spread_functions.cpp, $(wildcard ./src/*.cpp))
+cpp_sources := $(wildcard ./src/*.cpp)
 cu_sources := ./src/spread_functions.cu
 headers := $(wildcard ./src/*.hpp)
 
