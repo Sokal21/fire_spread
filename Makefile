@@ -16,7 +16,7 @@ endif
 
 # CUDA Configuration
 NVCC ?= nvcc
-NVCCFLAGS = --expt-relaxed-constexpr -O3 -std=c++17 --gpu-architecture=sm_70 -Xcompiler="-fopenmp -march=native"
+NVCCFLAGS = -O3 -std=c++17 --gpu-architecture=sm_70 -Xcompiler="-fopenmp -march=native"
 
 # General Flags
 COMMON_FLAGS = -Wall -Wextra -Werror -march=native -ffast-math -mavx2 -O3 -ftree-vectorize -fopenmp

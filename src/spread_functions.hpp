@@ -28,3 +28,17 @@ Fire simulate_fire_cuda(
   SimulationParams host_params, float distance, float elevation_mean, float elevation_sd,
   float upper_limit
 );
+
+struct Coord {
+  size_t x;
+  size_t y;
+
+  __host__ __device__ bool operator==(const Coord& other) const {
+    return x == other.x && y == other.y;
+  }
+
+  // Para permitir uso como índice en Matrix, si lo necesitás
+  __host__ __device__ operator std::pair<size_t, size_t>() const {
+    return { x, y };
+  }
+};
