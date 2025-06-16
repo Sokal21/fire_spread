@@ -21,6 +21,13 @@ struct Fire {
     return width == other.width && height == other.height &&
            burned_layer == other.burned_layer && burned_ids == other.burned_ids;
   }
+
+  Fire(size_t w, size_t h)
+    : width(w),
+      height(h),
+      burned_layer(w, h),
+      burned_ids(),
+      burned_ids_steps() {}
 };
 
 Fire read_fire(size_t width, size_t height, std::string filename);
