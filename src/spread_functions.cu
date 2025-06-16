@@ -126,9 +126,7 @@ Fire simulate_fire_cuda(
     size_t current_burning_count_host = host_ignition_cells.size();
     std::vector<std::pair<size_t, size_t>> host_current_burning_ids = host_ignition_cells;
 
-    Fire result_fire;
-    result_fire.width = host_landscape.width;
-    result_fire.height = host_landscape.height;
+    Fire result_fire(host_landscape.width, host_landscape.height);
     result_fire.burned_ids_steps.push_back(host_all_burned_ids.size());
 
 
