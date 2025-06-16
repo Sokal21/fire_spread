@@ -27,12 +27,12 @@ NVCCCMD = $(NVCC) $(NVCCFLAGS) $(PROJECT_INCLUDE) $(SLEEF_INCLUDE_PATH)
 
 # Source files
 # Separate .cpp and .cu sources
-CPP_SOURCES = $(wildcard ./src/*.cpp) $(wildcard graphics/*.cpp) # Add graphics sources
-CU_SOURCES = $(wildcard ./src/*.cu) # Assuming you'll have .cu files in src
+CPP_SOURCES = $(filter-out ./src/spread_functions.cpp, $(wildcard ./src/*.cpp) $(wildcard graphics/*.cpp))
+CU_SOURCES = $(wildcard ./src/*.cu)
 
 # Object files
 CPP_OBJECTS = $(CPP_SOURCES:.cpp=.o)
-CU_OBJECTS = $(CU_SOURCES:.cu=.o) # nvcc will produce .o from .cu
+CU_OBJECTS = $(CU_SOURCES:.cu=.o)
 
 # All objects
 OBJECTS = $(CPP_OBJECTS) $(CU_OBJECTS)
@@ -47,15 +47,13 @@ all: $(mains)
 	$(CXXCMD) -c $< -o $@
 
 # Rule to compile .cu files
-%.o: %.cu $(headers) # Add relevant .cuh CUDA headers if any
+%.o: %.cu $(headers)
 	$(NVCCCMD) -c $< -o $@
 
 # Rule to link executables
-# Ensure all objects (CPP_OBJECTS and CU_OBJECTS) are linked
-# and CUDA libraries are included.
 $(mains): %: %.cpp $(filter-out graphics/%.o, $(CPP_OBJECTS)) $(CU_OBJECTS) $(headers)
 	$(CXX) $(MORE_CXXFLAGS) $(CXXFLAGS) $(PROJECT_INCLUDE) $(SLEEF_INCLUDE_PATH) \
-		$< $(filter-out graphics/%.o, $(CPP_OBJECTS)) $(CU_OBJECTS) \
+		$< $(filter-out $@.o graphics/%.o, $(OBJECTS)) \
 		-o $@ $(SLEEF_LINK_FLAGS) -lm -fopenmp $(CUDA_LIB_PATH) $(CUDA_LIBS)
 
 # ... (data, clean targets) ...
