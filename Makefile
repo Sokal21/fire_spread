@@ -21,7 +21,7 @@ NVCC ?= nvcc
 NVCCFLAGS = -O3 -std=c++17 --gpu-architecture=sm_70 -Xcompiler="-fopenmp -march=native"
 
 # General Compiler Flags
-CXXFLAGS += -Wall -Wextra -Werror -march=native -ffast-math -mavx2 -O3 -fopt-info-vec-optimized -fopenmp
+CXXFLAGS += -Wall -Wextra -Werror -march=native -ffast-math -mavx2 -O3 -ftree-vectorize -fopenmp
 INCLUDE = -I./src
 CXXCMD = $(CXX) ${MORE_CXXFLAGS} $(CXXFLAGS) $(INCLUDE)
 
