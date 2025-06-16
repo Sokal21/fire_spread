@@ -20,39 +20,38 @@ endif
 NVCC ?= nvcc
 NVCCFLAGS = -O3 -std=c++17 --gpu-architecture=sm_70 -Xcompiler="-fopenmp -march=native"
 
-# General Compiler Flags
+# Compiler flags
 CXXFLAGS += -Wall -Wextra -Werror -march=native -ffast-math -mavx2 -O3 -ftree-vectorize -fopenmp
 INCLUDE = -I./src
 CXXCMD = $(CXX) ${MORE_CXXFLAGS} $(CXXFLAGS) $(INCLUDE)
 
 # Sources and objects
-cpp_sources := $(wildcard ./src/*.cpp)
+cpp_sources := $(filter-out ./src/spread_functions.cpp, $(wildcard ./src/*.cpp)) # exclude if needed
 cu_sources := $(wildcard ./src/*.cu)
-sources := $(cpp_sources) $(cu_sources)
-
 headers := $(wildcard ./src/*.hpp)
-objects_names := $(sources:./src/%.cpp=%)
-objects_names := $(objects_names:./src/%.cu=%)
-objects := $(objects_names:%=./src/%.o)
 
-# Main targets
-mains = graphics/burned_probabilities_data graphics/fire_animation_data
+cpp_objects := $(cpp_sources:./src/%.cpp=./src/%.o)
+cu_objects := $(cu_sources:./src/%.cu=./src/%.o)
+objects := $(cpp_objects) $(cu_objects)
+
+# Mains
+mains := graphics/burned_probabilities_data graphics/fire_animation_data
 
 all: $(mains)
 
-# Compile .cpp to .o
+# Compile .cpp
 ./src/%.o: ./src/%.cpp $(headers)
 	$(CXXCMD) -c $< -o $@
 
-# Compile .cu to .o
+# Compile .cu
 ./src/%.o: ./src/%.cu $(headers)
 	$(NVCC) $(NVCCFLAGS) -I./src -c $< -o $@
 
-# Link final executables
+# Link binaries
 $(mains): %: %.cpp $(objects) $(headers)
-	$(CXXCMD) $< $(objects) -o $@ -fopenmp
+	$(CXXCMD) $(objects) -o $@ -fopenmp
 
-# Data download and extract
+# Data
 data.zip:
 	wget https://cs.famaf.unc.edu.ar/~nicolasw/data.zip
 
