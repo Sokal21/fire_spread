@@ -261,30 +261,31 @@ __global__ void accumulate_burned_cells_kernel(
 }
 
 // Internal host function to run one replicate entirely on GPU and accumulate
-// Assumes d_landscape_cells, d_all_rand_states, and d_global_total_burned_counts are pre-allocated
+// Assumes ALL buffers are pre-allocated
 __host__ void run_single_replicate_and_accumulate(
     // Globally allocated GPU resources
     Cell* d_landscape_cells,
-    SimulationParams sim_params_for_kernel, // <<<< Changed: Pass by value (original was already by value, but name clarified)
+    SimulationParams sim_params_for_kernel,
     curandState* d_all_rand_states,
     size_t num_rng_states_in_pool,
     size_t* d_global_total_burned_counts,
+
+    // --- NEW: Pre-allocated, reusable per-replicate buffers ---
+    bool* d_burned_bin_this_sim,
+    Coord* d_initial_ignitions_this_sim,
+    unsigned int* d_candidate_count,
+    Coord* d_next_step_candidates,
+    Coord* d_current_burning_ids_gpu,
+    size_t max_candidates,
 
     // Host-side info for this replicate
     const Landscape& host_landscape_props,
     const std::vector<Coord>& host_initial_ignition_for_this_replicate,
     float distance, float elevation_mean, float elevation_sd, float upper_limit
 ) {
-    // --- 1. Allocate PER-REPLICATE GPU Memory ---
-    bool* d_burned_bin_this_sim;
-    size_t bin_size = host_landscape_props.width * host_landscape_props.height * sizeof(bool);
-    cudaMalloc(&d_burned_bin_this_sim, bin_size);
-    cudaMemset(d_burned_bin_this_sim, 0, bin_size); // Reset for this simulation
+    // --- 1. RESET PER-REPLICATE GPU Memory (NO MALLOC) ---
+    cudaMemset(d_burned_bin_this_sim, 0, host_landscape_props.width * host_landscape_props.height * sizeof(bool));
 
-    // Initialize d_burned_bin_this_sim with ignition points for this replicate
-    // This requires copying host_initial_ignition_for_this_replicate to GPU and launching a small kernel
-    Coord* d_initial_ignitions_this_sim;
-    cudaMalloc(&d_initial_ignitions_this_sim, host_initial_ignition_for_this_replicate.size() * sizeof(Coord));
     cudaMemcpy(d_initial_ignitions_this_sim, host_initial_ignition_for_this_replicate.data(),
                host_initial_ignition_for_this_replicate.size() * sizeof(Coord), cudaMemcpyHostToDevice);
 
@@ -299,28 +300,14 @@ __host__ void run_single_replicate_and_accumulate(
                 host_initial_ignition_for_this_replicate.size(),
                 host_landscape_props.width
             );
-            cudaError_t err_init_mark = cudaGetLastError();
-            if (err_init_mark != cudaSuccess) {
-                fprintf(stderr, "Initial kernel_mark_cells_as_true launch failed: %s\n", cudaGetErrorString(err_init_mark));
-            }
-            cudaDeviceSynchronize(); // Ensure initial state is set
+            cudaDeviceSynchronize(); // Sync after initial marking is fine
         }
     }
     // --- End initial marking ---
 
-    std::vector<Coord> host_current_burning_ids = host_initial_ignition_for_this_replicate;
-    size_t current_burning_count_host = host_current_burning_ids.size(); // Initialize count
-
-    unsigned int* d_candidate_count; // Per-replicate
-    cudaMalloc(&d_candidate_count, sizeof(unsigned int));
-    Coord* d_next_step_candidates; // Per-replicate
-    size_t max_candidates = host_landscape_props.width * host_landscape_props.height * 8;
-    cudaMalloc(&d_next_step_candidates, max_candidates * sizeof(Coord));
+    size_t current_burning_count_host = host_initial_ignition_for_this_replicate.size();
 
     // --- 2. Fire Spread Loop for THIS Replicate ---
-    // Use a device pointer for the current burning IDs. We will swap pointers instead of copying memory.
-    Coord* d_current_burning_ids_gpu;
-    cudaMalloc(&d_current_burning_ids_gpu, max_candidates * sizeof(Coord)); // Allocate once to max size
     cudaMemcpy(d_current_burning_ids_gpu, host_initial_ignition_for_this_replicate.data(),
                host_initial_ignition_for_this_replicate.size() * sizeof(Coord), cudaMemcpyHostToDevice);
 
@@ -382,9 +369,8 @@ __host__ void run_single_replicate_and_accumulate(
         current_burning_count_host = num_unique_candidates;
     }
     // --- End Fire Spread Loop ---
-    cudaFree(d_current_burning_ids_gpu); // Free the buffer allocated once at the start of the function
 
-    // --- 3. Accumulate results from d_burned_bin_this_sim into d_global_total_burned_counts ---
+    // --- 3. Accumulate results ---
     dim3 blockDimAcc(16, 16);
     dim3 gridDimAcc(
         (host_landscape_props.width + blockDimAcc.x - 1) / blockDimAcc.x,
@@ -396,11 +382,7 @@ __host__ void run_single_replicate_and_accumulate(
     );
     cudaDeviceSynchronize(); // Ensure accumulation for this replicate is done
 
-    // --- 4. Free PER-REPLICATE GPU Memory ---
-    cudaFree(d_initial_ignitions_this_sim);
-    cudaFree(d_burned_bin_this_sim);
-    cudaFree(d_next_step_candidates);
-    cudaFree(d_candidate_count);
+    // --- 4. NO LONGER FREEING BUFFERS HERE ---
 }
 
 // This is the new function that will be called from many_simulations.cpp (via a header declaration)
@@ -419,11 +401,6 @@ Matrix<size_t> burned_amounts_per_cell_on_gpu( // New name for clarity
     cudaMemcpy(d_landscape_cells, host_landscape.cells.elems.data(),
                host_landscape.cells.elems.size() * sizeof(Cell), cudaMemcpyHostToDevice);
 
-    // REMOVE GPU allocation for SimulationParams
-    // SimulationParams* d_simulation_params_gpu; 
-    // cudaMalloc(&d_simulation_params_gpu, sizeof(SimulationParams));
-    // cudaMemcpy(d_simulation_params_gpu, &host_sim_params, sizeof(SimulationParams), cudaMemcpyHostToDevice);
-
     size_t* d_global_total_burned_counts;
     size_t total_counts_size_bytes = host_landscape.width * host_landscape.height * sizeof(size_t);
     cudaMalloc(&d_global_total_burned_counts, total_counts_size_bytes);
@@ -437,6 +414,25 @@ Matrix<size_t> burned_amounts_per_cell_on_gpu( // New name for clarity
     setup_kernel<<<blocks_rng, threads_rng>>>(d_all_rand_states, time(0), num_rng_states);
     cudaDeviceSynchronize();
 
+    // --- NEW: Allocate REUSABLE PER-REPLICATE Buffers (Once) ---
+    bool* d_burned_bin_this_sim;
+    size_t bin_size = host_landscape.width * host_landscape.height * sizeof(bool);
+    cudaMalloc(&d_burned_bin_this_sim, bin_size);
+
+    Coord* d_initial_ignitions_this_sim;
+    cudaMalloc(&d_initial_ignitions_this_sim, host_initial_ignition_cells_template.size() * sizeof(Coord));
+
+    unsigned int* d_candidate_count;
+    cudaMalloc(&d_candidate_count, sizeof(unsigned int));
+
+    size_t max_candidates = host_landscape.width * host_landscape.height * 8;
+    Coord* d_next_step_candidates;
+    cudaMalloc(&d_next_step_candidates, max_candidates * sizeof(Coord));
+
+    Coord* d_current_burning_ids_gpu;
+    cudaMalloc(&d_current_burning_ids_gpu, max_candidates * sizeof(Coord));
+    // --- END NEW SECTION ---
+
     std::vector<Coord> host_ignition_coords_template;
     host_ignition_coords_template.reserve(host_initial_ignition_cells_template.size());
     for(const auto& p : host_initial_ignition_cells_template) {
@@ -445,10 +441,13 @@ Matrix<size_t> burned_amounts_per_cell_on_gpu( // New name for clarity
 
     // --- 2. Loop n_replicates (on host, orchestrating GPU work) ---
     for (size_t i = 0; i < n_replicates; ++i) {
+        // Pass the pre-allocated buffers to the worker function
         run_single_replicate_and_accumulate(
-            d_landscape_cells, 
-            host_sim_params, // <<<< Pass the host-side struct directly
-            d_all_rand_states, num_rng_states, d_global_total_burned_counts,
+            // Global resources
+            d_landscape_cells, host_sim_params, d_all_rand_states, num_rng_states, d_global_total_burned_counts,
+            // Reusable per-replicate buffers
+            d_burned_bin_this_sim, d_initial_ignitions_this_sim, d_candidate_count, d_next_step_candidates, d_current_burning_ids_gpu, max_candidates,
+            // Host-side info
             host_landscape, host_ignition_coords_template,
             distance, elevation_mean, elevation_sd, upper_limit
         );
@@ -459,11 +458,16 @@ Matrix<size_t> burned_amounts_per_cell_on_gpu( // New name for clarity
     cudaMemcpy(host_final_burned_amounts.elems.data(), d_global_total_burned_counts,
                total_counts_size_bytes, cudaMemcpyDeviceToHost);
 
-    // --- 4. Free GLOBAL GPU Resources ---
+    // --- 4. Free ALL GPU Resources ---
     cudaFree(d_landscape_cells);
-    // cudaFree(d_simulation_params_gpu); // REMOVE this free
     cudaFree(d_global_total_burned_counts);
     cudaFree(d_all_rand_states);
+    // Free the reusable buffers
+    cudaFree(d_burned_bin_this_sim);
+    cudaFree(d_initial_ignitions_this_sim);
+    cudaFree(d_candidate_count);
+    cudaFree(d_next_step_candidates);
+    cudaFree(d_current_burning_ids_gpu);
 
     return host_final_burned_amounts;
 }
