@@ -11,6 +11,7 @@
 
 #include "fires.hpp"
 #include "landscape.hpp"
+#include "matrix.hpp" // For Matrix<size_t>
 
 struct SimulationParams {
   float independent_pred;
@@ -34,6 +35,16 @@ Fire simulate_fire_cuda(
   const Landscape& host_landscape, const std::vector<std::pair<size_t, size_t>>& host_ignition_cells,
   SimulationParams host_params, float distance, float elevation_mean, float elevation_sd,
   float upper_limit
+);
+
+
+// Declaration for the new top-level GPU orchestrator
+Matrix<size_t> burned_amounts_per_cell_on_gpu(
+    const Landscape& landscape,
+    const std::vector<std::pair<size_t, size_t>>& initial_ignition_cells_template,
+    SimulationParams sim_params,
+    float distance, float elevation_mean, float elevation_sd, float upper_limit,
+    size_t n_replicates
 );
 
 
