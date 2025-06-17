@@ -135,7 +135,7 @@ Fire simulate_fire_cuda(
         return Fire(0,0); // Example error handling
     }
 
-    int threads_per_block_rng = 256;
+    int threads_per_block_rng = 1024;
     int blocks_rng = (num_rng_states + threads_per_block_rng - 1) / threads_per_block_rng;
     // Use time(0) or another source for a seed that changes per run
     // For reproducibility during debugging, you might use a fixed seed.
@@ -180,7 +180,7 @@ Fire simulate_fire_cuda(
 
         cudaMemset(d_candidate_count, 0, sizeof(unsigned int));
 
-        int threads_per_block = 256;
+        int threads_per_block = 1024;
         int blocks = (current_burning_count_host + threads_per_block - 1) / threads_per_block;
 
         fire_spread_step_kernel<<<blocks, threads_per_block>>>(
@@ -287,7 +287,7 @@ __host__ void run_single_replicate_and_accumulate(
 
     // --- Mark initial ignitions in d_burned_bin_this_sim ---
     if (!host_initial_ignition_for_this_replicate.empty()) {
-        int threads_init_mark = 256;
+        int threads_init_mark = 1024;
         int blocks_init_mark = (host_initial_ignition_for_this_replicate.size() + threads_init_mark - 1) / threads_init_mark;
         if (host_initial_ignition_for_this_replicate.size() > 0 && blocks_init_mark > 0) {
             kernel_mark_cells_as_true<<<blocks_init_mark, threads_init_mark>>>(
@@ -322,7 +322,7 @@ __host__ void run_single_replicate_and_accumulate(
                    current_burning_count_host * sizeof(Coord), cudaMemcpyHostToDevice);
         cudaMemset(d_candidate_count, 0, sizeof(unsigned int));
 
-        int threads_per_block = 256;
+        int threads_per_block = 1024;
         int blocks = (current_burning_count_host + threads_per_block - 1) / threads_per_block;
 
         fire_spread_step_kernel<<<blocks, threads_per_block>>>(
@@ -360,7 +360,7 @@ __host__ void run_single_replicate_and_accumulate(
             cudaMemcpy(d_unique_new_gpu, host_candidates_this_step.data(), host_candidates_this_step.size() * sizeof(Coord), cudaMemcpyHostToDevice);
 
             // --- CALL THE KERNEL TO UPDATE d_burned_bin_this_sim ---
-            int threads_mark = 256;
+            int threads_mark = 1024;
             int blocks_mark = (host_candidates_this_step.size() + threads_mark - 1) / threads_mark;
             // Ensure we launch only if there are cells to mark and blocks to launch
             if (host_candidates_this_step.size() > 0 && blocks_mark > 0) { 
@@ -435,7 +435,7 @@ Matrix<size_t> burned_amounts_per_cell_on_gpu( // New name for clarity
     curandState* d_all_rand_states;
     size_t num_rng_states = host_landscape.width * host_landscape.height;
     cudaMalloc(&d_all_rand_states, num_rng_states * sizeof(curandState));
-    int threads_rng = 256;
+    int threads_rng = 1024;
     int blocks_rng = (num_rng_states + threads_rng - 1) / threads_rng;
     setup_kernel<<<blocks_rng, threads_rng>>>(d_all_rand_states, time(0), num_rng_states);
     cudaDeviceSynchronize();
