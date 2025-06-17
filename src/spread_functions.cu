@@ -4,6 +4,18 @@
 #include <device_launch_parameters.h>
 #include <algorithm>
 #include <cmath>
+#include <ctime>
+
+// --- CUDA Kernel for setting up cuRAND states ---
+__global__ void setup_kernel(curandState *state, unsigned long long seed, size_t num_states) {
+    int id = blockIdx.x * blockDim.x + threadIdx.x;
+    if (id < num_states) {
+        // Initialize each state with a unique seed and sequence number
+        // Using id as the sequence number and a common seed.
+        // For more robust randomness across launches, the seed could also vary.
+        curand_init(seed, id, 0, &state[id]);
+    }
+}
 
 // --- CUDA Kernel for a single step of fire spread ---
 __global__ void fire_spread_step_kernel(
@@ -98,8 +110,39 @@ Fire simulate_fire_cuda(
     cudaMalloc(&d_burned_bin, bin_size);
     cudaMemset(d_burned_bin, 0, bin_size);
 
+    // --- START cuRAND Initialization ---
     curandState* d_rand_states;
-    // TODO: allocate and init d_rand_states as needed
+    // Number of RNG states: one for each cell in the landscape, as a safe upper bound
+    // since 'idx' in fire_spread_step_kernel can go up to num_current_burning.
+    // If num_current_burning can be up to total cells, this is appropriate.
+    size_t num_rng_states = host_landscape.width * host_landscape.height;
+    cudaError_t err = cudaMalloc(&d_rand_states, num_rng_states * sizeof(curandState));
+    if (err != cudaSuccess) {
+        fprintf(stderr, "Failed to allocate d_rand_states: %s\n", cudaGetErrorString(err));
+        // Handle error appropriately, e.g., return an empty Fire object or throw
+        return Fire(0,0); // Example error handling
+    }
+
+    int threads_per_block_rng = 256;
+    int blocks_rng = (num_rng_states + threads_per_block_rng - 1) / threads_per_block_rng;
+    // Use time(0) or another source for a seed that changes per run
+    // For reproducibility during debugging, you might use a fixed seed.
+    setup_kernel<<<blocks_rng, threads_per_block_rng>>>(d_rand_states, time(0), num_rng_states);
+    err = cudaGetLastError(); // Check for errors in kernel launch
+    if (err != cudaSuccess) {
+        fprintf(stderr, "setup_kernel launch failed: %s\n", cudaGetErrorString(err));
+        cudaFree(d_rand_states); // Clean up allocated memory
+        // Handle error
+        return Fire(0,0);
+    }
+    err = cudaDeviceSynchronize(); // Ensure setup_kernel completes
+    if (err != cudaSuccess) {
+        fprintf(stderr, "cudaDeviceSynchronize after setup_kernel failed: %s\n", cudaGetErrorString(err));
+        cudaFree(d_rand_states);
+        // Handle error
+        return Fire(0,0);
+    }
+    // --- END cuRAND Initialization ---
 
     std::vector<Coord> host_all_burned_ids = ignition_cells;
     Matrix<bool> host_burned_bin(host_landscape.width, host_landscape.height);
