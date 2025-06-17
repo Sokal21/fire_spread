@@ -17,6 +17,18 @@ __global__ void setup_kernel(curandState *state, unsigned long long seed, size_t
     }
 }
 
+// --- CUDA Kernel to mark cells as true based on coordinates (for initial ignitions) ---
+__global__ void kernel_mark_cells_as_true(bool* d_bin, const Coord* d_coords_to_mark, size_t num_coords, size_t landscape_width) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < num_coords) {
+        Coord cell = d_coords_to_mark[idx];
+        // Basic bounds check for safety, though coordinates should be valid if generated correctly
+        if (cell.x < landscape_width && cell.y < (SIZE_MAX / landscape_width)) { // Avoid overflow with y
+             d_bin[cell.y * landscape_width + cell.x] = true;
+        }
+    }
+}
+
 // --- CUDA Kernel for a single step of fire spread ---
 __global__ void fire_spread_step_kernel(
     Cell* d_landscape_cells,
@@ -457,16 +469,4 @@ Matrix<size_t> burned_amounts_per_cell_on_gpu( // New name for clarity
     cudaFree(d_all_rand_states);
 
     return host_final_burned_amounts;
-}
-
-// --- CUDA Kernel to mark cells as true based on coordinates (for initial ignitions) ---
-__global__ void kernel_mark_cells_as_true(bool* d_bin, const Coord* d_coords_to_mark, size_t num_coords, size_t landscape_width) {
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < num_coords) {
-        Coord cell = d_coords_to_mark[idx];
-        // Basic bounds check for safety, though coordinates should be valid if generated correctly
-        if (cell.x < landscape_width && cell.y < (SIZE_MAX / landscape_width)) { // Avoid overflow with y
-             d_bin[cell.y * landscape_width + cell.x] = true;
-        }
-    }
 }
