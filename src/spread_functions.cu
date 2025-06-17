@@ -273,19 +273,28 @@ __host__ void run_single_replicate_and_accumulate(
     cudaMemcpy(d_initial_ignitions_this_sim, host_initial_ignition_for_this_replicate.data(),
                host_initial_ignition_for_this_replicate.size() * sizeof(Coord), cudaMemcpyHostToDevice);
 
-    // Simple kernel to mark initial ignitions in d_burned_bin_this_sim
-    // (Define this kernel elsewhere if it doesn't exist)
-    // kernel_mark_initial_ignitions<<<grid, block>>>(d_burned_bin_this_sim, d_initial_ignitions_this_sim, host_initial_ignition_for_this_replicate.size(), host_landscape_props.width);
-    // For now, let's assume this is done correctly. The key is d_burned_bin_this_sim is set up.
-    // A simpler way for small initial ignitions: copy a host-prepared bool array.
-    // For now, we'll manage current_burning_ids on host and copy to GPU each step of *this* sim.
+    // --- Mark initial ignitions in d_burned_bin_this_sim ---
+    if (!host_initial_ignition_for_this_replicate.empty()) {
+        int threads_init_mark = 256;
+        int blocks_init_mark = (host_initial_ignition_for_this_replicate.size() + threads_init_mark - 1) / threads_init_mark;
+        if (host_initial_ignition_for_this_replicate.size() > 0 && blocks_init_mark > 0) {
+            kernel_mark_cells_as_true<<<blocks_init_mark, threads_init_mark>>>(
+                d_burned_bin_this_sim,
+                d_initial_ignitions_this_sim,
+                host_initial_ignition_for_this_replicate.size(),
+                host_landscape_props.width
+            );
+            cudaError_t err_init_mark = cudaGetLastError();
+            if (err_init_mark != cudaSuccess) {
+                fprintf(stderr, "Initial kernel_mark_cells_as_true launch failed: %s\n", cudaGetErrorString(err_init_mark));
+            }
+            cudaDeviceSynchronize(); // Ensure initial state is set
+        }
+    }
+    // --- End initial marking ---
 
     std::vector<Coord> host_current_burning_ids = host_initial_ignition_for_this_replicate;
-    // Update d_burned_bin_this_sim based on these initial ignitions (e.g., via a small kernel or by copying a pre-filled host array)
-    // For each p in host_current_burning_ids, set d_burned_bin_this_sim[p.y * width + p.x] = true; (Needs a kernel)
-
-
-    size_t current_burning_count_host = host_current_burning_ids.size();
+    size_t current_burning_count_host = host_current_burning_ids.size(); // Initialize count
 
     unsigned int* d_candidate_count; // Per-replicate
     cudaMalloc(&d_candidate_count, sizeof(unsigned int));
@@ -333,32 +342,34 @@ __host__ void run_single_replicate_and_accumulate(
 
         host_current_burning_ids.clear();
         // Update d_burned_bin_this_sim on GPU based on unique host_candidates_this_step
-        // This requires copying host_candidates_this_step to a d_buffer and launching a kernel.
         if (!host_candidates_this_step.empty()) {
             Coord* d_unique_new_gpu;
             cudaMalloc(&d_unique_new_gpu, host_candidates_this_step.size() * sizeof(Coord));
             cudaMemcpy(d_unique_new_gpu, host_candidates_this_step.data(), host_candidates_this_step.size() * sizeof(Coord), cudaMemcpyHostToDevice);
 
-            // Define and call a kernel: kernel_update_bin(d_burned_bin_this_sim, d_unique_new_gpu, host_candidates_this_step.size(), host_landscape_props.width);
-            // This kernel iterates d_unique_new_gpu and sets cells in d_burned_bin_this_sim to true.
-            // For now, this logic is simplified. The key is d_burned_bin_this_sim must be updated.
-            // Example kernel:
-            // __global__ void kernel_update_bin(bool* bin, Coord* new_coords, int count, size_t width) {
-            //    int idx = threadIdx.x + blockIdx.x * blockDim.x;
-            //    if (idx < count) { bin[new_coords[idx].y * width + new_coords[idx].x] = true; }
-            // }
-            // kernel_update_bin<<<...>>>(d_burned_bin_this_sim, d_unique_new_gpu, host_candidates_this_step.size(), host_landscape_props.width);
-            // cudaDeviceSynchronize(); // after kernel_update_bin
+            // --- CALL THE KERNEL TO UPDATE d_burned_bin_this_sim ---
+            int threads_mark = 256;
+            int blocks_mark = (host_candidates_this_step.size() + threads_mark - 1) / threads_mark;
+            // Ensure we launch only if there are cells to mark and blocks to launch
+            if (host_candidates_this_step.size() > 0 && blocks_mark > 0) { 
+                kernel_mark_cells_as_true<<<blocks_mark, threads_mark>>>(
+                    d_burned_bin_this_sim, 
+                    d_unique_new_gpu, 
+                    host_candidates_this_step.size(), 
+                    host_landscape_props.width
+                );
+                cudaError_t err_mark = cudaGetLastError(); // Check for launch errors
+                if (err_mark != cudaSuccess) {
+                    fprintf(stderr, "kernel_mark_cells_as_true launch failed: %s\n", cudaGetErrorString(err_mark));
+                    // Consider how to handle this error, e.g., break or return an error code
+                }
+                cudaDeviceSynchronize(); // Ensure d_burned_bin_this_sim is updated before the next iteration
+            }
+            // --- END KERNEL CALL ---
 
             cudaFree(d_unique_new_gpu);
         }
-        // The cells that actually spread and were not previously burned in *this sim*
-        // (This logic needs to be careful if d_burned_bin_this_sim is updated by a kernel)
-        // For now, assume host_candidates_this_step are the ones to check against d_burned_bin_this_sim
-        // The current logic for host_current_burning_ids is based on host_burned_bin from the old simulate_fire.
-        // This needs to be adapted to use d_burned_bin_this_sim.
-        // The simplest is to just use host_candidates_this_step as the next burning set,
-        // assuming the kernel correctly uses d_burned_bin_this_sim to avoid re-burning.
+        
         host_current_burning_ids = host_candidates_this_step;
         current_burning_count_host = host_current_burning_ids.size();
     }
@@ -446,4 +457,16 @@ Matrix<size_t> burned_amounts_per_cell_on_gpu( // New name for clarity
     cudaFree(d_all_rand_states);
 
     return host_final_burned_amounts;
+}
+
+// --- CUDA Kernel to mark cells as true based on coordinates (for initial ignitions) ---
+__global__ void kernel_mark_cells_as_true(bool* d_bin, const Coord* d_coords_to_mark, size_t num_coords, size_t landscape_width) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < num_coords) {
+        Coord cell = d_coords_to_mark[idx];
+        // Basic bounds check for safety, though coordinates should be valid if generated correctly
+        if (cell.x < landscape_width && cell.y < (SIZE_MAX / landscape_width)) { // Avoid overflow with y
+             d_bin[cell.y * landscape_width + cell.x] = true;
+        }
+    }
 }
