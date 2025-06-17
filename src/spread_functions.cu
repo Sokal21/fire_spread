@@ -5,6 +5,9 @@
 #include <algorithm>
 #include <cmath>
 #include <ctime>
+#include <thrust/device_vector.h>
+#include <thrust/sort.h>
+#include <thrust/unique.h>
 
 // --- CUDA Kernel for setting up cuRAND states ---
 __global__ void setup_kernel(curandState *state, unsigned long long seed, size_t num_states) {
@@ -315,11 +318,13 @@ __host__ void run_single_replicate_and_accumulate(
     cudaMalloc(&d_next_step_candidates, max_candidates * sizeof(Coord));
 
     // --- 2. Fire Spread Loop for THIS Replicate ---
+    // Use a device pointer for the current burning IDs. We will swap pointers instead of copying memory.
+    Coord* d_current_burning_ids_gpu;
+    cudaMalloc(&d_current_burning_ids_gpu, max_candidates * sizeof(Coord)); // Allocate once to max size
+    cudaMemcpy(d_current_burning_ids_gpu, host_initial_ignition_for_this_replicate.data(),
+               host_initial_ignition_for_this_replicate.size() * sizeof(Coord), cudaMemcpyHostToDevice);
+
     while (current_burning_count_host > 0) {
-        Coord* d_current_burning_ids_gpu; // Per-step, for this replicate
-        cudaMalloc(&d_current_burning_ids_gpu, current_burning_count_host * sizeof(Coord));
-        cudaMemcpy(d_current_burning_ids_gpu, host_current_burning_ids.data(),
-                   current_burning_count_host * sizeof(Coord), cudaMemcpyHostToDevice);
         cudaMemset(d_candidate_count, 0, sizeof(unsigned int));
 
         int threads_per_block = 1024;
@@ -327,65 +332,57 @@ __host__ void run_single_replicate_and_accumulate(
 
         fire_spread_step_kernel<<<blocks, threads_per_block>>>(
             d_landscape_cells, d_burned_bin_this_sim, d_current_burning_ids_gpu, current_burning_count_host,
-            sim_params_for_kernel, // <<<< Use the by-value parameter directly
+            sim_params_for_kernel,
             distance, elevation_mean, (elevation_sd != 0.0f ? 1.0f / elevation_sd : 0.0f), upper_limit,
             host_landscape_props.width, host_landscape_props.height,
             d_next_step_candidates, d_candidate_count, d_all_rand_states
         );
-        cudaDeviceSynchronize(); // Sync for this step of this replicate
-        cudaFree(d_current_burning_ids_gpu);
+        // NO cudaDeviceSynchronize() HERE
 
         unsigned int num_candidates_host;
+        // The only D->H copy needed inside the loop is this tiny one to check the count
         cudaMemcpy(&num_candidates_host, d_candidate_count, sizeof(unsigned int), cudaMemcpyDeviceToHost);
 
-        if (num_candidates_host == 0) break; // Fire stopped for this replicate
+        if (num_candidates_host == 0) break;
 
-        std::vector<Coord> host_candidates_this_step(num_candidates_host);
-        cudaMemcpy(host_candidates_this_step.data(), d_next_step_candidates,
-                   num_candidates_host * sizeof(Coord), cudaMemcpyDeviceToHost);
-
-        // Sort and unique on CPU (can be moved to GPU with Thrust for more optimization)
-        std::sort(host_candidates_this_step.begin(), host_candidates_this_step.end(),
-                  [](const Coord& a, const Coord& b) {
-                      return (a.y < b.y) || (a.y == b.y && a.x < b.x);
-                  });
-        host_candidates_this_step.erase(std::unique(host_candidates_this_step.begin(), host_candidates_this_step.end()),
-                                        host_candidates_this_step.end());
-
-        host_current_burning_ids.clear();
-        // Update d_burned_bin_this_sim on GPU based on unique host_candidates_this_step
-        if (!host_candidates_this_step.empty()) {
-            Coord* d_unique_new_gpu;
-            cudaMalloc(&d_unique_new_gpu, host_candidates_this_step.size() * sizeof(Coord));
-            cudaMemcpy(d_unique_new_gpu, host_candidates_this_step.data(), host_candidates_this_step.size() * sizeof(Coord), cudaMemcpyHostToDevice);
-
-            // --- CALL THE KERNEL TO UPDATE d_burned_bin_this_sim ---
-            int threads_mark = 1024;
-            int blocks_mark = (host_candidates_this_step.size() + threads_mark - 1) / threads_mark;
-            // Ensure we launch only if there are cells to mark and blocks to launch
-            if (host_candidates_this_step.size() > 0 && blocks_mark > 0) { 
-                kernel_mark_cells_as_true<<<blocks_mark, threads_mark>>>(
-                    d_burned_bin_this_sim, 
-                    d_unique_new_gpu, 
-                    host_candidates_this_step.size(), 
-                    host_landscape_props.width
-                );
-                cudaError_t err_mark = cudaGetLastError(); // Check for launch errors
-                if (err_mark != cudaSuccess) {
-                    fprintf(stderr, "kernel_mark_cells_as_true launch failed: %s\n", cudaGetErrorString(err_mark));
-                    // Consider how to handle this error, e.g., break or return an error code
-                }
-                cudaDeviceSynchronize(); // Ensure d_burned_bin_this_sim is updated before the next iteration
-            }
-            // --- END KERNEL CALL ---
-
-            cudaFree(d_unique_new_gpu);
-        }
+        // --- Perform Sort and Unique on GPU using Thrust ---
+        // The thrust device_ptr wraps a raw pointer so thrust algorithms can use it.
+        thrust::device_ptr<Coord> d_next_step_ptr = thrust::device_pointer_cast(d_next_step_candidates);
         
-        host_current_burning_ids = host_candidates_this_step;
-        current_burning_count_host = host_current_burning_ids.size();
+        // 1. Sort the candidates on the GPU
+        thrust::sort(d_next_step_ptr, d_next_step_ptr + num_candidates_host,
+                     [] __device__ (const Coord& a, const Coord& b) {
+                         return (a.y < b.y) || (a.y == b.y && a.x < b.x);
+                     });
+
+        // 2. Find unique elements on the GPU. `new_end` will be a pointer to the end of the unique range.
+        thrust::device_ptr<Coord> new_end = thrust::unique(d_next_step_ptr, d_next_step_ptr + num_candidates_host);
+        
+        // 3. Calculate the number of unique new candidates
+        size_t num_unique_candidates = new_end - d_next_step_ptr;
+        
+        if (num_unique_candidates == 0) break;
+
+        // --- Update d_burned_bin_this_sim with the unique candidates ---
+        int threads_mark = 1024;
+        int blocks_mark = (num_unique_candidates + threads_mark - 1) / threads_mark;
+        if (blocks_mark > 0) {
+            // We can use d_next_step_candidates directly as it now holds the unique values at the beginning
+            kernel_mark_cells_as_true<<<blocks_mark, threads_mark>>>(
+                d_burned_bin_this_sim, 
+                d_next_step_candidates, // Use the buffer that now contains the unique sorted candidates
+                num_unique_candidates, 
+                host_landscape_props.width
+            );
+        }
+
+        // --- Prepare for next iteration ---
+        // Instead of allocating a new buffer, just copy the unique candidates into the input buffer for the next step.
+        cudaMemcpy(d_current_burning_ids_gpu, d_next_step_candidates, num_unique_candidates * sizeof(Coord), cudaMemcpyDeviceToDevice);
+        current_burning_count_host = num_unique_candidates;
     }
     // --- End Fire Spread Loop ---
+    cudaFree(d_current_burning_ids_gpu); // Free the buffer allocated once at the start of the function
 
     // --- 3. Accumulate results from d_burned_bin_this_sim into d_global_total_burned_counts ---
     dim3 blockDimAcc(16, 16);
