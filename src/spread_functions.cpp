@@ -1,23 +1,24 @@
 #include "spread_functions.hpp"
+#include "random_pool.hpp"
 
 #define _USE_MATH_DEFINES
 #include <cmath>
 #include <random>
 #include <vector>
+#include <immintrin.h>  // For AVX2 intrinsics
 
 #include "fires.hpp"
 #include "landscape.hpp"
 
-double spread_probability(
-    const Cell& burning, const Cell& neighbour, SimulationParams params, double angle,
-    double distance, double elevation_mean, double elevation_sd, double upper_limit = 1.0
+float spread_probability(
+    const Cell& burning, const Cell& neighbour, SimulationParams params, float angle,
+    float distance, float elevation_mean, float inv_elevation_sd, float upper_limit = 1.0f
 ) {
+  float slope_term = sinf(atanf((neighbour.elevation - burning.elevation) / distance));
+  float wind_term = cosf(angle - burning.wind_direction);
+  float elev_term = (neighbour.elevation - elevation_mean) * inv_elevation_sd;
 
-  double slope_term = sin(atan((neighbour.elevation - burning.elevation) / distance));
-  double wind_term = cos(angle - burning.wind_direction);
-  double elev_term = (neighbour.elevation - elevation_mean) / elevation_sd;
-
-  double linpred = params.independent_pred;
+  float linpred = params.independent_pred;
 
   if (neighbour.vegetation_type == SUBALPINE) {
     linpred += params.subalpine_pred;
@@ -33,16 +34,18 @@ double spread_probability(
   linpred += wind_term * params.wind_pred + elev_term * params.elevation_pred +
              slope_term * params.slope_pred;
 
-  double prob = upper_limit / (1 + exp(-linpred));
+  float prob = upper_limit / (1.0f + expf(-linpred));
 
   return prob;
 }
 
 Fire simulate_fire(
     const Landscape& landscape, const std::vector<std::pair<size_t, size_t>>& ignition_cells,
-    SimulationParams params, double distance, double elevation_mean, double elevation_sd,
-    double upper_limit = 1.0
+    SimulationParams params, float distance, float elevation_mean, float elevation_sd,
+    float upper_limit = 1.0f
 ) {
+  // Create a random pool for this simulation
+  RandomPool random_pool;
 
   size_t n_row = landscape.height;
   size_t n_col = landscape.width;
@@ -69,72 +72,109 @@ Fire simulate_fire(
     burned_bin[{ cell_0, cell_1 }] = 1;
   }
 
+  // Directions for the 8 neighbors declared previous to the loop
+  constexpr int moves[2][8] = { { -1, -1, -1, 0, 0, 1, 1, 1 },
+                                { -1, 0, 1, -1, 1, -1, 0, 1 } };
+
+  // Angles for the 8 neighbors declared previous to the loop
+  constexpr float angles[8] = {
+    M_PI * 3.0f / 4.0f, M_PI, M_PI * 5.0f / 4.0f, M_PI / 2.0f, M_PI * 3.0f / 2.0f,
+    M_PI / 4.0f,        0.0f, M_PI * 7.0f / 4.0f
+  };
+
+  float inv_elevation_sd = 1.0f / elevation_sd;
+
   while (burning_size > 0) {
     size_t end_forward = end;
 
     // Loop over burning cells in the cycle
-
-    // b is going to keep the position in burned_ids that have to be evaluated
-    // in this burn cycle
     for (size_t b = start; b < end; b++) {
       size_t burning_cell_0 = burned_ids[b].first;
       size_t burning_cell_1 = burned_ids[b].second;
 
       const Cell& burning_cell = landscape[{ burning_cell_0, burning_cell_1 }];
 
-      constexpr int moves[8][2] = { { -1, -1 }, { -1, 0 }, { -1, 1 }, { 0, -1 },
-                                    { 0, 1 },   { 1, -1 }, { 1, 0 },  { 1, 1 } };
-
-      int neighbors_coords[2][8];
-
-      for (size_t i = 0; i < 8; i++) {
-        neighbors_coords[0][i] = int(burning_cell_0) + moves[i][0];
-        neighbors_coords[1][i] = int(burning_cell_1) + moves[i][1];
+      // Prefetch next burning cell if it exists
+      if (b + 1 < end) {
+        size_t next_cell_0 = burned_ids[b + 1].first;
+        size_t next_cell_1 = burned_ids[b + 1].second;
+        const Cell& next_cell = landscape[{next_cell_0, next_cell_1}];
+        __builtin_prefetch(&next_cell, 0, 3);
       }
-      // Note that in the case 0 - 1 we will have size_t_MAX
 
-      // Loop over neighbors_coords of the focal burning cell
+      // Loop over neighbors of the focal burning cell
+      // Load base coordinates into vectors
+      __m256i base_x = _mm256_set1_epi32(burning_cell_0);
+      __m256i base_y = _mm256_set1_epi32(burning_cell_1);
+      
+      // Load moves into vectors directly from memory
+      __m256i moves_x = _mm256_loadu_si256((__m256i*)&moves[0]);
+      __m256i moves_y = _mm256_loadu_si256((__m256i*)&moves[1]);
 
-      for (size_t n = 0; n < 8; n++) {
-
-        int neighbour_cell_0 = neighbors_coords[0][n];
-        int neighbour_cell_1 = neighbors_coords[1][n];
-
-        // Is the cell in range?
-        bool out_of_range = 0 > neighbour_cell_0 || neighbour_cell_0 >= int(n_col) ||
-                            0 > neighbour_cell_1 || neighbour_cell_1 >= int(n_row);
-
-        if (out_of_range)
-          continue;
-
-        const Cell& neighbour_cell = landscape[{ neighbour_cell_0, neighbour_cell_1 }];
-
+      // Calculate neighbor coordinates
+      __m256i neighbor_x = _mm256_add_epi32(base_x, moves_x);
+      __m256i neighbor_y = _mm256_add_epi32(base_y, moves_y);
+      
+      // Load bounds for comparison
+      __m256i bounds_x = _mm256_set1_epi32(n_col);
+      __m256i bounds_y = _mm256_set1_epi32(n_row);
+      __m256i minusOne = _mm256_set1_epi32(-1);
+      
+      // Check if coordinates are in bounds
+      __m256i x_in_bounds = _mm256_and_si256(
+          _mm256_cmpgt_epi32(neighbor_x, minusOne),
+          _mm256_cmpgt_epi32(bounds_x, neighbor_x)
+      );
+      __m256i y_in_bounds = _mm256_and_si256(
+          _mm256_cmpgt_epi32(neighbor_y, minusOne),
+          _mm256_cmpgt_epi32(bounds_y, neighbor_y)
+      );
+      __m256i in_bounds = _mm256_and_si256(x_in_bounds, y_in_bounds);
+      
+      // Convert to mask for processing
+      int mask = _mm256_movemask_epi8(in_bounds);
+      // Prefetch valid neighbor cells
+      for (int n = 0; n < 8; n++) {
+        if (!(mask & (1 << (n * 4)))) continue;  // Skip if out of bounds
+        
+        // Extract coordinates using array indexing
+        int neighbor_cell_0 = ((int*)&neighbor_x)[n];
+        int neighbor_cell_1 = ((int*)&neighbor_y)[n];
+        
+        // Prefetch the neighbor cell
+        const Cell& neighbor_cell = landscape[{neighbor_cell_0, neighbor_cell_1}];
+        __builtin_prefetch(&neighbor_cell, 0, 3);
+      }
+      // Process each neighbor that's in bounds
+      for (int n = 0; n < 8; n++) {
+        if (!(mask & (1 << (n * 4)))) continue;  // Skip if out of bounds
+        
+        // Extract coordinates using array indexing instead of _mm256_extract_epi32
+        int neighbor_cell_0 = ((int*)&neighbor_x)[n];
+        int neighbor_cell_1 = ((int*)&neighbor_y)[n];
+        
+        const Cell& neighbour_cell = landscape[{ neighbor_cell_0, neighbor_cell_1 }];
+        
         // Is the cell burnable?
-        bool burnable_cell =
-            !burned_bin[{ neighbour_cell_0, neighbour_cell_1 }] && neighbour_cell.burnable;
-
-        if (!burnable_cell)
+        if (burned_bin[{ neighbor_cell_0, neighbor_cell_1 }] || !neighbour_cell.burnable) {
           continue;
-
-        constexpr double angles[8] = { M_PI * 3 / 4, M_PI, M_PI * 5 / 4, M_PI / 2, M_PI * 3 / 2,
-                                       M_PI / 4,     0,    M_PI * 7 / 4 };
-
+        }
+        
         // simulate fire
-        double prob = spread_probability(
+        float prob = spread_probability(
             burning_cell, neighbour_cell, params, angles[n], distance, elevation_mean,
-            elevation_sd, upper_limit
+            inv_elevation_sd, upper_limit
         );
-
+        
         // Burn with probability prob (Bernoulli)
-        bool burn = (double)rand() / (double)RAND_MAX < prob;
-
-        if (burn == 0)
+        if (random_pool.get_random() >= prob) {
           continue;
-
+        }
+        
         // If burned, store id of recently burned cell and set 1 in burned_bin
         end_forward += 1;
-        burned_ids.push_back({ neighbour_cell_0, neighbour_cell_1 });
-        burned_bin[{ neighbour_cell_0, neighbour_cell_1 }] = true;
+        burned_ids.push_back({ neighbor_cell_0, neighbor_cell_1 });
+        burned_bin[{ neighbor_cell_0, neighbor_cell_1 }] = true;
       }
     }
 

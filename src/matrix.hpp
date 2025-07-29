@@ -3,8 +3,19 @@
 template <typename T> struct Matrix {
   size_t width;
   size_t height;
+  std::vector<T> elems;
 
-  Matrix(size_t width, size_t height) : width(width), height(height), elems(width * height){};
+  Matrix(size_t width, size_t height) : width(width), height(height), elems(width * height) {
+    // Ensure the vector's memory is aligned
+    if (elems.size() > 0) {
+      T* data = elems.data();
+      if (reinterpret_cast<uintptr_t>(data) % 16 != 0) {
+        // Reallocate with aligned memory if needed
+        std::vector<T> aligned_elems(width * height);
+        elems = std::move(aligned_elems);
+      }
+    }
+  };
 
   const T operator[](std::pair<size_t, size_t> index) const {
     return elems[index.second * width + index.first];
@@ -27,9 +38,7 @@ template <typename T> struct Matrix {
 
     return true;
   };
-
-  std::vector<T> elems;
-};
+} __attribute__((aligned(16))); // Force 16-byte alignment for the Matrix struct
 
 template <> struct Matrix<bool> {
   size_t width;
