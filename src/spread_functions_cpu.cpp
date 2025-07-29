@@ -329,5 +329,9 @@ Fire simulate_fire(
 
   } // End while(current_step_burning_count > 0)
 
-  return { n_col, n_row, burned_bin, burned_ids, burned_ids_steps };
+  Fire fire(n_col, n_row);
+  fire.burned_layer = burned_bin;
+  fire.burned_ids = burned_ids;
+  fire.burned_ids_steps = burned_ids_steps;
+  return fire;
 }

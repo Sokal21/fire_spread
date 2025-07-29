@@ -1,44 +1,55 @@
 # Compiler selection
 COMPILER ?= gcc
-CXXFLAGS =
-MORE_CXXFLAGS =
 
 ifeq ($(COMPILER),gcc)
     CXX = g++
-    CXXFLAGS += -std=c++17
+    CXXFLAGS = -std=c++17
 else ifeq ($(COMPILER),clang)
     CXX = clang++
-    CXXFLAGS += -std=c++17
+    CXXFLAGS = -std=c++17
 else ifeq ($(COMPILER),icx)
     CXX = icpx
-    CXXFLAGS += -std=c++17
+    CXXFLAGS = -std=c++17
 else
     $(error Unsupported compiler: $(COMPILER))
 endif
 
-# # SLEEF configuration
-# SLEEF_CFLAGS = -DENABLE_AVX2 -DENABLE_AVX -DENABLE_SSE2 -DENABLE_SSE4 -DENABLE_FMA4 -DENABLE_FMA
-# SLEEF_LDFLAGS = -lsleef
+# CUDA Configuration
+NVCC ?= nvcc
+# NVCCFLAGS = -O3 -std=c++17 --gpu-architecture=sm_70 -Xcompiler="-fopenmp -march=native"
+NVCCFLAGS = -O3 -std=c++17 -gencode arch=compute_61,code=sm_61 --extended-lambda -Xcompiler="-fopenmp -march=native"
 
-CXXFLAGS += -Wall -Wextra -Werror -march=native -ffast-math -mavx2 -O3 -ftree-vectorize -fopt-info-vec-optimized $(SLEEF_CFLAGS) -fopenmp # Add -fopenmp
+# General Flags
+COMMON_FLAGS = -Wall -Wextra -Werror -march=native -ffast-math -mavx2 -O3 -ftree-vectorize -fopenmp
 INCLUDE = -I./src
-CXXCMD = $(CXX) ${MORE_CXXFLAGS} $(CXXFLAGS) $(INCLUDE)
 
-headers = $(wildcard ./src/*.hpp)
-sources = $(wildcard ./src/*.cpp)
-objects_names = $(sources:./src/%.cpp=%)
-objects = $(objects_names:%=./src/%.o)
+# Source and object files
+cpp_sources := $(filter-out ./src/spread_functions.cpp, $(wildcard ./src/*.cpp))
+cu_sources := ./src/spread_functions.cu
+headers := $(wildcard ./src/*.hpp)
 
-mains = graphics/burned_probabilities_data graphics/fire_animation_data
+cpp_objects := $(cpp_sources:./src/%.cpp=./src/%.o)
+cu_objects := $(cu_sources:./src/%.cu=./src/%.o)
+objects := $(cpp_objects) $(cu_objects)
+
+# Main executables
+mains := graphics/burned_probabilities_data graphics/fire_animation_data
 
 all: $(mains)
 
-%.o: %.cpp $(headers)
-	$(CXXCMD) -c $< -o $@
+# Compile C++ source files
+./src/%.o: ./src/%.cpp $(headers)
+	$(CXX) $(CXXFLAGS) $(COMMON_FLAGS) $(INCLUDE) -c $< -o $@
 
+# Compile CUDA source files
+./src/%.o: ./src/%.cu $(headers)
+	$(NVCC) $(NVCCFLAGS) $(INCLUDE) -c $< -o $@
+
+# Link executables
 $(mains): %: %.cpp $(objects) $(headers)
-	$(CXXCMD) $< $(objects) -o $@ $(SLEEF_LDFLAGS) -fopenmp # Add -fopenmp for linking
+	$(NVCC) $(NVCCFLAGS) $(INCLUDE) $< $(objects) -o $@ -Xcompiler="-fopenmp -march=native"
 
+# Data file
 data.zip:
 	wget https://cs.famaf.unc.edu.ar/~nicolasw/data.zip
 
@@ -48,4 +59,4 @@ data: data.zip
 clean:
 	rm -f $(objects) $(mains)
 
-.PHONY: all clean
+.PHONY: all clean data
